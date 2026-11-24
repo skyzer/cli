@@ -86,6 +86,21 @@ $ npx skills add https://github.com/gotd/cli --all
 $ npx skills add https://github.com/gotd/cli --skill tg
 ```
 
+## Inspect and invoke Telegram RPCs
+
+`tg rpc describe messages.sendMedia --output json` prints the parameters in
+the installed Telegram schema. It also accepts constructor names, for example
+`inputMediaUploadedDocument`. `tg rpc invoke --yes help.getConfig '{}'` executes
+a method with the authenticated user session. Arguments use Telegram's TL field
+names. For a field with an abstract TL type, include the concrete constructor
+in the `_` field, for example `{"_":"inputPeerSelf"}`.
+
+Raw RPCs use the generated methods and types in the installed `gotd/td`
+dependency. With Dependabot version updates enabled, the existing daily Go
+schedule opens dependency update PRs. The next build picks up newly generated
+methods through the same commands. Operations that combine several steps, such as
+uploading and sending a file, can still use the existing `tg upload` command.
+
 ## What you can do
 
 Run `tg --help` for the full, grouped command list, or `tg <command> --help` for details.
