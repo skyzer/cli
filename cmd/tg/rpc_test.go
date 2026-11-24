@@ -99,6 +99,23 @@ func TestRPCInvokeDirectArgument(t *testing.T) {
 	require.IsType(t, &tg.UsersUserFull{}, result)
 }
 
+func TestRPCInvokeWithExactWideIntegers(t *testing.T) {
+	api := newFuncAPI(t, func(input bin.Encoder) (bin.Encoder, error) {
+		request := input.(*tg.MessagesSendMessageRequest)
+		peer := request.Peer.(*tg.InputPeerChannel)
+		require.Equal(t, int64(9007199254740993), peer.ChannelID)
+		require.Equal(t, int64(-9223372036854775808), peer.AccessHash)
+		require.Equal(t, int64(9223372036854775807), request.RandomID)
+		return &tg.UpdatesTooLong{}, nil
+	})
+	result, err := telegramRPC().invoke(context.Background(), api, "messages.sendMessage", `{
+		"peer":{"_":"inputPeerChannel","channel_id":"9007199254740993","access_hash":"-9223372036854775808"},
+		"message":"A test message", "random_id":"9223372036854775807"
+	}`)
+	require.NoError(t, err)
+	require.IsType(t, &tg.UpdatesTooLong{}, result)
+}
+
 func TestRPCRejectsInvalidRequests(t *testing.T) {
 	api := newFuncAPI(t, func(_ bin.Encoder) (bin.Encoder, error) {
 		t.Fatal("invalid RPC reached the network")
@@ -113,6 +130,7 @@ func TestRPCRejectsInvalidRequests(t *testing.T) {
 		{"help.getConfig", `{"unexpected":1}`},
 		{"messages.sendMedia", `{"peer":{"_":"inputFile"}}`},
 		{"messages.sendMedia", `{"peer":null}`},
+		{"messages.sendMessage", `{"peer":{"_":"inputPeerSelf"},"message":"test","random_id":"9223372036854775808"}`},
 		{"users.getUsers", `{"id":[{"_":"inputUserSelf"},{"_":"inputPeerSelf"}]}`},
 	} {
 		t.Run(tc.method+tc.args, func(t *testing.T) {

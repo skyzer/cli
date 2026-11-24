@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -194,7 +195,8 @@ func (c rpcCatalog) decodeUnion(data json.RawMessage, into reflect.Value) error 
 }
 
 func (c rpcCatalog) decodeValue(data json.RawMessage, into reflect.Value) error {
-	if bytes.Equal(bytes.TrimSpace(data), []byte("null")) {
+	data = bytes.TrimSpace(data)
+	if bytes.Equal(data, []byte("null")) {
 		return fmt.Errorf("omit optional arguments instead of passing null")
 	}
 	if !into.IsValid() || !into.CanSet() {
@@ -203,6 +205,10 @@ func (c rpcCatalog) decodeValue(data json.RawMessage, into reflect.Value) error 
 	switch into.Kind() {
 	case reflect.Interface:
 		return c.decodeUnion(data, into)
+	case reflect.Int64, reflect.Uint64:
+		if bytes.HasPrefix(data, []byte(`"`)) {
+			return decodeWideInteger(data, into)
+		}
 	case reflect.Slice:
 		if into.Type().Elem().Kind() != reflect.Uint8 {
 			var items []json.RawMessage
@@ -231,6 +237,27 @@ func (c rpcCatalog) decodeValue(data json.RawMessage, into reflect.Value) error 
 		return nil
 	}
 	return json.Unmarshal(data, into.Addr().Interface())
+}
+
+func decodeWideInteger(data json.RawMessage, into reflect.Value) error {
+	var decimal string
+	if err := json.Unmarshal(data, &decimal); err != nil {
+		return err
+	}
+	if into.Kind() == reflect.Int64 {
+		value, err := strconv.ParseInt(decimal, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid signed 64-bit decimal integer")
+		}
+		into.SetInt(value)
+		return nil
+	}
+	value, err := strconv.ParseUint(decimal, 10, 64)
+	if err != nil {
+		return fmt.Errorf("invalid unsigned 64-bit decimal integer")
+	}
+	into.SetUint(value)
+	return nil
 }
 
 func (c rpcCatalog) invoke(ctx context.Context, api *tg.Client, name, params string) (any, error) {
