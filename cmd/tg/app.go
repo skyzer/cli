@@ -159,7 +159,8 @@ func (a *app) ensureActive() error {
 
 // skipConfig reports whether the command runs without a loaded config/session.
 func skipConfig(cmd *cobra.Command) bool {
-	if cmd.CommandPath() == "tg rpc describe" {
+	switch cmd.CommandPath() {
+	case "tg rpc describe", "tg rpc list":
 		return true
 	}
 	for c := cmd; c != nil; c = c.Parent() {

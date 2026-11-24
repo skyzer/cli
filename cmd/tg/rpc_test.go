@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,6 +13,24 @@ import (
 	"github.com/gotd/td/bin"
 	"github.com/gotd/td/tg"
 )
+
+func TestRPCListWithoutConfig(t *testing.T) {
+	root := newRootCmd()
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetArgs([]string{"--config", filepath.Join(t.TempDir(), "missing.yaml"),
+		"--output", "json", "rpc", "list"})
+	require.NoError(t, root.Execute())
+
+	var response struct {
+		Data []string `json:"data"`
+	}
+	require.NoError(t, json.Unmarshal(output.Bytes(), &response))
+	require.True(t, sort.StringsAreSorted(response.Data))
+	require.Contains(t, response.Data, "help.getConfig")
+	require.Contains(t, response.Data, "messages.sendMedia")
+	require.NotContains(t, response.Data, "inputPeerSelf")
+}
 
 func TestRPCDescribe(t *testing.T) {
 	config, err := telegramRPC().describe("help.getConfig")

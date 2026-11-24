@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -44,6 +45,24 @@ func (c rpcCatalog) object(name string) (bin.Object, error) {
 		return nil, fmt.Errorf("unknown Telegram schema name %q", name)
 	}
 	return c.constructors[id](), nil
+}
+
+func (c rpcCatalog) list() []string {
+	names := make([]string, 0, len(c.methods))
+	for name := range c.names {
+		if _, ok := c.methods[rpcKey(name)]; !ok {
+			continue
+		}
+		request, err := c.object(name)
+		if err != nil {
+			continue
+		}
+		if _, _, err := c.method(name, request); err == nil {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (c rpcCatalog) method(name string, request bin.Object) (reflect.Method, reflect.Value, error) {
@@ -243,6 +262,14 @@ func (a *app) newRPCCmd() *cobra.Command {
 		Short:   "Inspect or invoke the Telegram RPC methods in the installed schema",
 		GroupID: groupMessaging,
 	}
+	list := &cobra.Command{
+		Use:   "list",
+		Short: "List callable Telegram RPC methods in the installed schema",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return a.printer.Emit(telegramRPC().list())
+		},
+	}
 	describe := &cobra.Command{
 		Use:   "describe <method-or-constructor>",
 		Short: "Describe a Telegram TL method or constructor",
@@ -274,6 +301,6 @@ func (a *app) newRPCCmd() *cobra.Command {
 		},
 	}
 	invoke.Flags().BoolVar(&confirmed, "yes", false, "Confirm execution of the raw RPC")
-	root.AddCommand(describe, invoke)
+	root.AddCommand(list, describe, invoke)
 	return root
 }
