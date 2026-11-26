@@ -12,8 +12,10 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gotd/cli/internal/runtimetl"
 	"github.com/gotd/td/bin"
 	"github.com/gotd/td/tdp"
+	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/tg"
 )
 
@@ -289,11 +291,21 @@ func (a *app) newRPCCmd() *cobra.Command {
 		Short:   "Inspect or invoke the Telegram RPC methods in the installed schema",
 		GroupID: groupMessaging,
 	}
+	var schemaCache string
+	root.PersistentFlags().StringVar(&schemaCache, "schema-cache", "",
+		"Automatically refresh and use this cache of the published Telegram Desktop API schema")
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "List callable Telegram RPC methods in the installed schema",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if schemaCache != "" {
+				schema, err := runtimetl.Refresh(cmd.Context(), schemaCache)
+				if err != nil {
+					return err
+				}
+				return a.printer.Emit(schema.Names())
+			}
 			return a.printer.Emit(telegramRPC().list())
 		},
 	}
@@ -301,7 +313,18 @@ func (a *app) newRPCCmd() *cobra.Command {
 		Use:   "describe <method-or-constructor>",
 		Short: "Describe a Telegram TL method or constructor",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if schemaCache != "" {
+				schema, err := runtimetl.Refresh(cmd.Context(), schemaCache)
+				if err != nil {
+					return err
+				}
+				description, err := schema.Describe(args[0])
+				if err != nil {
+					return err
+				}
+				return a.printer.Emit(description)
+			}
 			description, err := telegramRPC().describe(args[0])
 			if err != nil {
 				return err
@@ -318,6 +341,9 @@ func (a *app) newRPCCmd() *cobra.Command {
 			if !confirmed {
 				return fmt.Errorf("raw RPCs can change account data; pass --yes to proceed")
 			}
+			if schemaCache != "" {
+				return a.invokeRuntimeRPC(cmd.Context(), schemaCache, args[0], args[1])
+			}
 			return a.run(cmd.Context(), runParams{auth: authUser}, func(ctx context.Context, api *tg.Client) error {
 				result, err := telegramRPC().invoke(ctx, api, args[0], args[1])
 				if err != nil {
@@ -330,4 +356,32 @@ func (a *app) newRPCCmd() *cobra.Command {
 	invoke.Flags().BoolVar(&confirmed, "yes", false, "Confirm execution of the raw RPC")
 	root.AddCommand(list, describe, invoke)
 	return root
+}
+
+func (a *app) invokeRuntimeRPC(ctx context.Context, cache, name, params string) error {
+	schema, err := runtimetl.Refresh(ctx, cache)
+	if err != nil {
+		return err
+	}
+	call, err := schema.Prepare(name, json.RawMessage(params))
+	if err != nil {
+		return err
+	}
+	if err := a.ensureActive(); err != nil {
+		return err
+	}
+	exists, err := a.sessionStore(a.active.label, a.active.acc, kindUser).Exists(ctx)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return errNotAuthorized
+	}
+	return a.connect(ctx, runParams{auth: authUser, layer: schema.Layer},
+		func(ctx context.Context, client *telegram.Client, _ tg.UpdateDispatcher) error {
+			if err := client.Invoke(ctx, call, call); err != nil {
+				return err
+			}
+			return a.printer.Emit(call.Response)
+		})
 }

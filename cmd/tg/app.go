@@ -177,6 +177,7 @@ func skipConfig(cmd *cobra.Command) bool {
 type runParams struct {
 	auth    authKind
 	updates bool
+	layer   int // Optional schema layer for runtime TL RPCs.
 	// authorize performs interactive authentication when the session is not yet
 	// authorized. If nil, user sessions error with errNotAuthorized and bot
 	// sessions authenticate with the configured token.
@@ -195,6 +196,7 @@ func (a *app) optionsFor(st *accountState, rp runParams, d tg.UpdateDispatcher) 
 		Device:         deviceConfig(),
 		Middlewares:    mw,
 		SessionStorage: a.sessionStore(st.label, st.acc, rp.auth.String()),
+		Layer:          rp.layer,
 	}
 	if rp.updates {
 		opts.UpdateHandler = d
