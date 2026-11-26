@@ -83,14 +83,14 @@ func TestRefreshIntroducesMethodAndKeepsLastGoodSchema(t *testing.T) {
 	if _, err := s.Prepare("example.future", []byte("{}")); err != nil {
 		t.Fatal(err)
 	}
-	for _, old := range []string{published, "unsupported schema"} {
+	for i, old := range []string{published, "unsupported schema"} {
 		current = old
-		s, err = refresh(t.Context(), cache, now.Add(12*time.Minute), fetch)
+		s, err = refresh(t.Context(), cache, now.Add(time.Duration(12+i*6)*time.Minute), fetch)
 		if err != nil || s.Layer != 235 {
 			t.Fatalf("downgraded the last valid schema: %v", err)
 		}
 	}
-	s, err = refresh(t.Context(), cache, now.Add(12*time.Minute),
+	s, err = refresh(t.Context(), cache, now.Add(24*time.Minute),
 		func(context.Context) ([]byte, error) { return nil, errors.New("offline") })
 	if err != nil || s.Layer != 235 {
 		t.Fatalf("lost last valid schema when offline: %v", err)
@@ -98,5 +98,21 @@ func TestRefreshIntroducesMethodAndKeepsLastGoodSchema(t *testing.T) {
 	st, err := os.Stat(cache)
 	if err != nil || st.Mode().Perm()&0077 != 0 {
 		t.Fatalf("cache permissions: %v", err)
+	}
+	if _, err := refresh(t.Context(), cache, now.Add(25*time.Minute),
+		func(context.Context) ([]byte, error) {
+			t.Fatal("re-fetched within the failed refresh retry window")
+			return nil, nil
+		}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRefreshWithoutWritableCache(t *testing.T) {
+	path := t.TempDir() // A directory cannot be atomically replaced by the schema file.
+	s, err := refresh(t.Context(), path, time.Now(),
+		func(context.Context) ([]byte, error) { return []byte(published), nil })
+	if err != nil || s.Layer != 234 {
+		t.Fatalf("fetched schema should work without a cache: %v", err)
 	}
 }

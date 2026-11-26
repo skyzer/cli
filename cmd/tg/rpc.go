@@ -294,6 +294,9 @@ func (a *app) newRPCCmd() *cobra.Command {
 	var schemaCache string
 	root.PersistentFlags().StringVar(&schemaCache, "schema-cache", "",
 		"Automatically refresh and use this cache of the published Telegram Desktop API schema")
+	var linkedAppID int
+	root.PersistentFlags().IntVar(&linkedAppID, "linked-app-id", 0,
+		"Public app ID from 'tg devices' for an existing user session")
 	list := &cobra.Command{
 		Use:   "list",
 		Short: "List callable Telegram RPC methods in the installed schema",
@@ -341,8 +344,11 @@ func (a *app) newRPCCmd() *cobra.Command {
 			if !confirmed {
 				return fmt.Errorf("raw RPCs can change account data; pass --yes to proceed")
 			}
+			if linkedAppID < 0 || linkedAppID > 2147483647 || (linkedAppID != 0 && schemaCache == "") {
+				return fmt.Errorf("--linked-app-id requires a positive TL int and --schema-cache")
+			}
 			if schemaCache != "" {
-				return a.invokeRuntimeRPC(cmd.Context(), schemaCache, args[0], args[1])
+				return a.invokeRuntimeRPC(cmd.Context(), schemaCache, args[0], args[1], linkedAppID)
 			}
 			return a.run(cmd.Context(), runParams{auth: authUser}, func(ctx context.Context, api *tg.Client) error {
 				result, err := telegramRPC().invoke(ctx, api, args[0], args[1])
@@ -358,7 +364,7 @@ func (a *app) newRPCCmd() *cobra.Command {
 	return root
 }
 
-func (a *app) invokeRuntimeRPC(ctx context.Context, cache, name, params string) error {
+func (a *app) invokeRuntimeRPC(ctx context.Context, cache, name, params string, linkedAppID int) error {
 	schema, err := runtimetl.Refresh(ctx, cache)
 	if err != nil {
 		return err
@@ -377,7 +383,9 @@ func (a *app) invokeRuntimeRPC(ctx context.Context, cache, name, params string) 
 	if !exists {
 		return errNotAuthorized
 	}
-	return a.connect(ctx, runParams{auth: authUser, layer: schema.Layer},
+	// The linked session already contains its authorization key. The public
+	// app ID is sufficient for initConnection, and this path never logs in.
+	return a.connect(ctx, runParams{auth: authUser, layer: schema.Layer, linkedAppID: linkedAppID},
 		func(ctx context.Context, client *telegram.Client, _ tg.UpdateDispatcher) error {
 			if err := client.Invoke(ctx, call, call); err != nil {
 				return err

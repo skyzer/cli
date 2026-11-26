@@ -175,9 +175,10 @@ func skipConfig(cmd *cobra.Command) bool {
 
 // runParams configures a client session for connect/run.
 type runParams struct {
-	auth    authKind
-	updates bool
-	layer   int // Optional schema layer for runtime TL RPCs.
+	auth        authKind
+	updates     bool
+	layer       int // Optional schema layer for runtime TL RPCs.
+	linkedAppID int // Public app ID of a pre-existing session for runtime TL RPCs.
 	// authorize performs interactive authentication when the session is not yet
 	// authorized. If nil, user sessions error with errNotAuthorized and bot
 	// sessions authenticate with the configured token.
@@ -225,9 +226,13 @@ func (a *app) connectWith(
 		d = tg.NewUpdateDispatcher()
 	}
 
-	appID, appHash, err := effectiveCreds(st.acc)
-	if err != nil {
-		return err
+	appID, appHash := rp.linkedAppID, ""
+	if appID == 0 {
+		var err error
+		appID, appHash, err = effectiveCreds(st.acc)
+		if err != nil {
+			return err
+		}
 	}
 	client := telegram.NewClient(appID, appHash, a.optionsFor(st, rp, d))
 

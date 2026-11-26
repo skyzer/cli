@@ -44,25 +44,23 @@ func refresh(ctx context.Context, path string, now time.Time, fetch func(context
 		return previous, nil
 	}
 	data, err := fetch(ctx)
-	if err != nil {
-		if previous != nil {
-			return previous, nil
+	var next *Schema
+	if err == nil {
+		next, err = Parse(data)
+	}
+	if latest, _ := readCache(path); latest != nil {
+		previous = latest
+	}
+	if err != nil || (previous != nil && previous.Layer > next.Layer) {
+		if previous == nil {
+			return nil, err
 		}
-		return nil, err
+		// A failed refresh starts a new retry window without replacing the cache.
+		_ = os.Chtimes(path, now, now)
+		return previous, nil
 	}
-	next, err := Parse(data)
-	if err != nil {
-		if previous != nil {
-			return previous, nil
-		}
-		return nil, err
-	}
-	if latest, _ := readCache(path); latest != nil && latest.Layer > next.Layer {
-		return latest, nil
-	}
-	if err := writeCache(path, data); err != nil {
-		return nil, err
-	}
+	// The freshly fetched schema is usable even when the cache cannot be written.
+	_ = writeCache(path, data)
 	return next, nil
 }
 
