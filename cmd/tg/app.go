@@ -221,6 +221,10 @@ func (a *app) connectWith(
 	rp runParams,
 	f func(ctx context.Context, client *telegram.Client, d tg.UpdateDispatcher) error,
 ) error {
+	if (rp.layer != 0 || rp.linkedAppID != 0) &&
+		(rp.layer <= 0 || rp.auth != authUser || rp.updates || rp.authorize != nil) {
+		return errors.New("runtime schema connections require an existing user session without updates")
+	}
 	var d tg.UpdateDispatcher
 	if rp.updates {
 		d = tg.NewUpdateDispatcher()
