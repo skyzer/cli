@@ -11,8 +11,24 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gotd/td/bin"
+	"github.com/gotd/td/telegram"
 	"github.com/gotd/td/tg"
 )
+
+func TestRuntimeRPCDisablesAutomaticAuthorizationAndUpdates(t *testing.T) {
+	for _, params := range []runParams{
+		{layer: 234, auth: authBot},
+		{layer: 234, updates: true},
+		{layer: 234, authorize: func(context.Context, *telegram.Client, tg.UpdateDispatcher) error {
+			t.Fatal("runtime RPC attempted automatic authorization")
+			return nil
+		}},
+		{linkedAppID: 12345},
+	} {
+		require.ErrorContains(t, newApp().connectWith(t.Context(), nil, params, nil),
+			"runtime schema connections require an existing user session without updates")
+	}
+}
 
 func TestRPCListWithoutConfig(t *testing.T) {
 	root := newRootCmd()

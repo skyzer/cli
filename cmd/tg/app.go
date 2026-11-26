@@ -175,8 +175,10 @@ func skipConfig(cmd *cobra.Command) bool {
 
 // runParams configures a client session for connect/run.
 type runParams struct {
-	auth    authKind
-	updates bool
+	auth        authKind
+	updates     bool
+	layer       int // Optional schema layer for runtime TL RPCs.
+	linkedAppID int // Public app ID of a pre-existing session for runtime TL RPCs.
 	// authorize performs interactive authentication when the session is not yet
 	// authorized. If nil, user sessions error with errNotAuthorized and bot
 	// sessions authenticate with the configured token.
@@ -195,6 +197,7 @@ func (a *app) optionsFor(st *accountState, rp runParams, d tg.UpdateDispatcher) 
 		Device:         deviceConfig(),
 		Middlewares:    mw,
 		SessionStorage: a.sessionStore(st.label, st.acc, rp.auth.String()),
+		Layer:          rp.layer,
 	}
 	if rp.updates {
 		opts.UpdateHandler = d
@@ -218,14 +221,22 @@ func (a *app) connectWith(
 	rp runParams,
 	f func(ctx context.Context, client *telegram.Client, d tg.UpdateDispatcher) error,
 ) error {
+	if (rp.layer != 0 || rp.linkedAppID != 0) &&
+		(rp.layer <= 0 || rp.auth != authUser || rp.updates || rp.authorize != nil) {
+		return errors.New("runtime schema connections require an existing user session without updates")
+	}
 	var d tg.UpdateDispatcher
 	if rp.updates {
 		d = tg.NewUpdateDispatcher()
 	}
 
-	appID, appHash, err := effectiveCreds(st.acc)
-	if err != nil {
-		return err
+	appID, appHash := rp.linkedAppID, ""
+	if appID == 0 {
+		var err error
+		appID, appHash, err = effectiveCreds(st.acc)
+		if err != nil {
+			return err
+		}
 	}
 	client := telegram.NewClient(appID, appHash, a.optionsFor(st, rp, d))
 
